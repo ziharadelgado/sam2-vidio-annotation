@@ -1,0 +1,9 @@
+torchvision
+numpy
+opencv-python
+pillow
+pathlib
+random
+gc
+For Linux x86 use:
+pip3 install torch torchvision
