@@ -1,0 +1,39 @@
+./shark_annotation_all_in_one (2).ipynb:    "checkpoint_path = '/home/zihara_delgado_uri_edu/checkpoints/sam2_hiera_large.pt'\n",
+./shark_annotation_all_in_one (2).ipynb:    "local_dir = Path(\"/home/zihara_delgado_uri_edu/videos\")\n",
+./shark_annotation_all_in_one (2).ipynb:    "print(os.path.exists('/home/zihara_delgado_uri_edu/videos/Copy of (5)GH124317-Etmopterus.mp4'))\n"
+./shark_annotation_all_in_one (2).ipynb:    "frames_dir = '/home/zihara_delgado_uri_edu/annotated_frames/video_frames'\n",
+./shark_annotation_all_in_one (2).ipynb:    "frames_dir = '/home/zihara_delgado_uri_edu/annotated_frames/video_frames'\n",
+./shark_annotation_all_in_one (2).ipynb:    "output_path = '/home/zihara_delgado_uri_edu/frame_for_roboflow.jpg'\n",
+./shark_annotation_all_in_one (2).ipynb:    "for f in os.listdir('/home/zihara_delgado_uri_edu/'):\n",
+./shark_annotation_all_in_one (2).ipynb:    "zip_name = '/home/zihara_delgado_uri_edu/Etmopterus-Uploaded on 02-23-26 at 12-26 pm.coco.zip'\n",
+./shark_annotation_all_in_one (2).ipynb:    "    z.extractall('/home/zihara_delgado_uri_edu/roboflow_export')\n",
+./shark_annotation_all_in_one (2).ipynb:    "!find /home/zihara_delgado_uri_edu/roboflow_export -type f\n",
+./shark_annotation_all_in_one (2).ipynb:    "with open('/home/zihara_delgado_uri_edu/roboflow_export/train/_annotations.coco.json', 'r') as f:\n",
+./shark_annotation_all_in_one (2).ipynb:    "# - Output: /home/zihara_delgado_uri_edu/export_to_roboflow/\n",
+./shark_annotation_all_in_one (2).ipynb:    "EXPORT_DIR = '/home/zihara_delgado_uri_edu/export_to_roboflow'\n",
+./shark_annotation_all_in_one (2).ipynb:    "zip_filename = '/home/zihara_delgado_uri_edu/shark_annotations_export'\n",
+./shark_annotation_all_in_one (2).ipynb:    "export_dir = '/home/zihara_delgado_uri_edu/export_to_roboflow'\n",
+./shark_annotation_all_in_one (2).ipynb:    "output_path = '/home/zihara_delgado_uri_edu/comparison_video.mp4'\n",
+./.git/config:	url = https://github.com/ziharadelgado/sam2-vidio-annotation.git
+./.git/config:	github-pr-base-branch = "ziharadelgado#sam2-vidio-annotation#main"
+./.git/config:	github-pr-owner-number = "ziharadelgado#sam2-vidio-annotation#1"
+./.git/logs/HEAD:0000000000000000000000000000000000000000 663b20cee642ee513daa8b5515bd4f3a97abf6fe KamronAggorURI <kamron_aggor@uri.edu> 1772652184 -0500	clone: from https://github.com/ziharadelgado/sam2-vidio-annotation.git
+./.git/logs/refs/heads/main:0000000000000000000000000000000000000000 663b20cee642ee513daa8b5515bd4f3a97abf6fe KamronAggorURI <kamron_aggor@uri.edu> 1772652184 -0500	clone: from https://github.com/ziharadelgado/sam2-vidio-annotation.git
+
+Make a plan for each result inside of the notebook.
+1. checkpoint_path: Run scripts/checkpoint-download.sh and input the path generated
+2. local_dir: Replace with ~/annotated-video
+3. print(os.path_exists()): Delete - we code confirmation into subprocess
+4. "frames_dir = '/home/zihara_delgado_uri_edu/annotated_frames/video_frames'\n": Delete cell - unnecessary for non-notebook environment
+5. "frames_dir = '/home/zihara_delgado_uri_edu/annotated_frames/video_frames'\n": Needs heavy editing. Replacing with a method that 
+6.  "output_path = '/home/zihara_delgado_uri_edu/frame_for_roboflow.jpg'\n"
+7. "for f in os.listdir('/home/zihara_delgado_uri_edu/'):\n"
+8. "zip_name = '/home/zihara_delgado_uri_edu/Etmopterus-Uploaded on 02-23-26 at 12-26 pm.coco.zip'\n"
+9. "z.extractall('/home/zihara_delgado_uri_edu/roboflow_export')\n"
+10. "!find /home/zihara_delgado_uri_edu/roboflow_export -type f\n"
+11. "with open('/home/zihara_delgado_uri_edu/roboflow_export/train/_annotations.coco.json', 'r') as f:\n"
+12. "# - Output: /home/zihara_delgado_uri_edu/export_to_roboflow/\n"
+13. "EXPORT_DIR = '/home/zihara_delgado_uri_edu/export_to_roboflow'\n"
+14. "zip_filename = '/home/zihara_delgado_uri_edu/shark_annotations_export'\n"
+15. "export_dir = '/home/zihara_delgado_uri_edu/export_to_roboflow'\n"
+16. "output_path = '/home/zihara_delgado_uri_edu/comparison_video.mp4'\n"
