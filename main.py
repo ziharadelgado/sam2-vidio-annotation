@@ -5,7 +5,7 @@ from annotate import SharkAnnotator
 
 def main():
     # Step 1: Download the checkpoint if it doesn't exist
-    checkpoint_path = Path("models/sam2/checkpoints/sam2_hiera_large.pt")
+    checkpoint_path = Path("models/sam2/checkpoints/sam2.1_hiera_large.pt")
     if not checkpoint_path.exists():
         print("Downloading SAM 2.1 checkpoint...")
         try:
@@ -13,7 +13,7 @@ def main():
         except subprocess.CalledProcessError as e:
             print(f"Failed to download checkpoint: {e}")
             # If standard download fails, maybe it's already in home?
-            home_checkpoint = Path.home() / "checkpoints/sam2_hiera_large.pt"
+            home_checkpoint = Path.home() / "checkpoints/sam2.1_hiera_large.pt"
             if home_checkpoint.exists():
                 print(f"Using checkpoint from {home_checkpoint}")
                 checkpoint_path = home_checkpoint
@@ -24,11 +24,11 @@ def main():
     # Step 2: Initialize the annotator
     # We use dynamic paths relative to home directory or current directory
     work_dir = Path.home() / "annotated-video"
-    gdrive_queue = "gdrive:DeepSea_ObjectDetection/rclone/queue/"
+    gdrive_queue = "kamgdrive:DeepSea_ObjectDetection/rclone/queue/"
     
     annotator = SharkAnnotator(
         checkpoint_path=str(checkpoint_path),
-        config_path="sam2_hiera_l.yaml",
+        config_path="configs/sam2.1/sam2.1_hiera_l.yaml",
         work_dir=str(work_dir)
     )
 
@@ -42,8 +42,7 @@ def main():
     # Step 4: Download and process the queue
     queue_dir = annotator.download_queue(gdrive_queue)
     if not queue_dir:
-        print("Queue download failed or empty.")
-        return
+        raise RuntimeError(f"CRITICAL ERROR: Failed to download queue from {gdrive_queue}. The remote must be accessible to proceed.")
 
     # Process each video in the queue
     video_files = [f for f in os.listdir(queue_dir) if f.endswith(".mp4")]

@@ -17,7 +17,8 @@ from PIL import Image
 from tqdm import tqdm
 
 # Add SAM2 to path
-SAM2_DIR = os.path.join(os.getcwd(), "models", "sam2")
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+SAM2_DIR = os.path.join(SCRIPT_DIR, "models", "sam2")
 if SAM2_DIR not in sys.path:
     sys.path.insert(0, SAM2_DIR)
 
@@ -30,13 +31,13 @@ except ImportError:
 class SharkAnnotator:
     def __init__(self, 
                  checkpoint_path, 
-                 config_path="sam2_hiera_l.yaml", 
+                 config_path="configs/sam2.1/sam2.1_hiera_l.yaml", 
                  device=None,
                  work_dir=None):
-        self.checkpoint_path = checkpoint_path
+        self.checkpoint_path = os.path.abspath(checkpoint_path)
         self.config_path = config_path
         self.device = device or torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-        self.work_dir = work_dir or os.path.expanduser("~/annotated-video")
+        self.work_dir = os.path.abspath(work_dir or os.path.expanduser("~/annotated-video"))
         os.makedirs(self.work_dir, exist_ok=True)
         
         self.predictor = None
@@ -71,7 +72,7 @@ class SharkAnnotator:
         finally:
             os.chdir(original_cwd)
 
-    def download_queue(self, gdrive_source="gdrive:DeepSea_ObjectDetection/rclone/queue/"):
+    def download_queue(self, gdrive_source="kamgdrive:DeepSea_ObjectDetection/rclone/queue/"):
         print(f"Downloading queue from {gdrive_source}...")
         local_queue = os.path.join(self.work_dir, "queue")
         os.makedirs(local_queue, exist_ok=True)
