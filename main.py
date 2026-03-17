@@ -24,7 +24,7 @@ def main():
     # Step 2: Initialize the annotator
     # We use dynamic paths relative to home directory or current directory
     work_dir = Path.home() / "annotated-video"
-    gdrive_queue = "kamgdrive:DeepSea_ObjectDetection/rclone/queue/"
+    gdrive_queue = "gdrive:DeepSea_ObjectDetection/rclone/queue/"
     
     annotator = SharkAnnotator(
         checkpoint_path=str(checkpoint_path),
@@ -44,25 +44,47 @@ def main():
     if not queue_dir:
         raise RuntimeError(f"CRITICAL ERROR: Failed to download queue from {gdrive_queue}. The remote must be accessible to proceed.")
 
-    # Process each video in the queue
-    video_files = [f for f in os.listdir(queue_dir) if f.endswith(".mp4")]
-    if not video_files:
-        print("No videos found in the queue.")
+    # Search for videos or image directories
+    # 1. Look for .mp4 files (original behavior)
+    video_files = []
+    for root, dirs, files in os.walk(queue_dir):
+        for file in files:
+            if file.endswith(".mp4"):
+                video_files.append(os.path.join(root, file))
+
+    # 2. Look for COCO JSON files in directories (new behavior)
+    coco_dirs = []
+    for root, dirs, files in os.walk(queue_dir):
+        if "_annotations.coco.json" in files:
+            coco_dirs.append(root)
+
+    if not video_files and not coco_dirs:
+        print("No videos or COCO image directories found in the queue.")
         return
 
-    for video_file in video_files:
-        video_path = os.path.join(queue_dir, video_file)
+    # Process videos
+    for video_path in video_files:
+        video_file = os.path.basename(video_path)
         json_file = video_file.replace(".mp4", ".json")
-        json_path = os.path.join(queue_dir, json_file)
+        json_path = os.path.join(os.path.dirname(video_path), json_file)
         
         if os.path.exists(json_path):
-            print(f"\n--- Processing {video_file} ---")
+            print(f"\n--- Processing video {video_file} ---")
             try:
                 annotator.process_video(video_path, json_path)
             except Exception as e:
                 print(f"Error processing {video_file}: {e}")
         else:
             print(f"\n--- Skipping {video_file} (no JSON annotation found) ---")
+
+    # Process COCO directories
+    for coco_dir in coco_dirs:
+        json_path = os.path.join(coco_dir, "_annotations.coco.json")
+        print(f"\n--- Processing COCO directory {os.path.basename(coco_dir)} ---")
+        try:
+            annotator.process_images(coco_dir, json_path)
+        except Exception as e:
+            print(f"Error processing COCO directory {coco_dir}: {e}")
 
     print("\n✅ All processing complete!")
     print(f"Results are in: {work_dir / 'exports'}")

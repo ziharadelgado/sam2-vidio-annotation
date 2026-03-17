@@ -72,7 +72,7 @@ class SharkAnnotator:
         finally:
             os.chdir(original_cwd)
 
-    def download_queue(self, gdrive_source="kamgdrive:DeepSea_ObjectDetection/rclone/queue/"):
+    def download_queue(self, gdrive_source="gdrive:DeepSea_ObjectDetection/rclone/queue/"):
         print(f"Downloading queue from {gdrive_source}...")
         local_queue = os.path.join(self.work_dir, "queue")
         os.makedirs(local_queue, exist_ok=True)
@@ -85,7 +85,127 @@ class SharkAnnotator:
             print(f"❌ Failed to download queue: {e}")
             return None
 
-    def extract_frames(self, video_path, target_fps=30, target_res=(1024, 576)):
+    def process_images(self, image_dir, coco_json_path):
+        """
+        Process a directory of images using COCO annotations.
+        """
+        video_name = pathlib.Path(image_dir).name
+        with open(coco_json_path, 'r') as f:
+            coco_data = json.load(f)
+        
+        # Map image_id to list of annotations
+        img_id_to_anns = {}
+        for ann in coco_data["annotations"]:
+            img_id = ann["image_id"]
+            if img_id not in img_id_to_anns:
+                img_id_to_anns[img_id] = []
+            img_id_to_anns[img_id].append(ann)
+            
+        # Map image_id to file_name and info
+        images_info = {img["id"]: img for img in coco_data["images"]}
+        
+        # SAM 2 video predictor can take a directory of images
+        print(f"Initializing SAM 2 state for image directory: {video_name}...")
+        inference_state = self.predictor.init_state(
+            video_path=image_dir,
+            offload_video_to_cpu=True,
+            offload_state_to_cpu=True
+        )
+        
+        # Sort image IDs to ensure we process in some order (SAM 2 expects frame indices)
+        # We'll map image IDs to frame indices 0, 1, 2...
+        sorted_img_ids = sorted(images_info.keys())
+        img_id_to_frame_idx = {img_id: i for i, img_id in enumerate(sorted_img_ids)}
+        
+        # Add prompts
+        for img_id in sorted_img_ids:
+            if img_id in img_id_to_anns:
+                frame_idx = img_id_to_frame_idx[img_id]
+                for ann in img_id_to_anns[img_id]:
+                    obj_id = ann.get("category_id", 1)
+                    bbox = ann["bbox"] # [x, y, w, h]
+                    box = [bbox[0], bbox[1], bbox[0] + bbox[2], bbox[1] + bbox[3]]
+                    
+                    print(f"Adding box prompt on frame {frame_idx} (img_id {img_id}): {box}")
+                    self.predictor.add_new_points_or_box(
+                        inference_state=inference_state,
+                        frame_idx=frame_idx,
+                        obj_id=obj_id,
+                        box=box
+                    )
+
+        # Propagate (even if they aren't strictly a sequence, SAM 2 can refine/propagate)
+        # If they aren't a sequence, we might just want to process each frame individually
+        # But SAM 2's strength is propagation. Let's propagate.
+        print("Propagating masks...")
+        video_segments = {}
+        for out_frame_idx, out_obj_ids, out_mask_logits in self.predictor.propagate_in_video(inference_state):
+            video_segments[out_frame_idx] = {
+                out_obj_id: self.clean_mask((out_mask_logits[i] > 0.0).cpu().numpy().squeeze())
+                for i, out_obj_id in enumerate(out_obj_ids)
+            }
+
+        # Export (using original image names)
+        num_frames = len(sorted_img_ids)
+        # We need to adapt export_coco to use original file names
+        self.export_coco_images(video_name, video_segments, image_dir, sorted_img_ids, images_info, img_id_to_frame_idx)
+        
+        # Cleanup
+        self.predictor.reset_state(inference_state)
+        torch.cuda.empty_cache()
+        gc.collect()
+
+    def export_coco_images(self, video_name, video_segments, image_dir, sorted_img_ids, images_info, img_id_to_frame_idx):
+        export_dir = os.path.join(self.work_dir, "exports", video_name)
+        os.makedirs(os.path.join(export_dir, "images"), exist_ok=True)
+        
+        coco = {
+            "images": [],
+            "annotations": [],
+            "categories": [{"id": i, "name": f"class_{i}"} for i in range(20)] # Placeholder
+        }
+        
+        ann_id = 1
+        for i, img_id in enumerate(sorted_img_ids):
+            img_info = images_info[img_id]
+            file_name = img_info["file_name"]
+            src = os.path.join(image_dir, file_name)
+            dst = os.path.join(export_dir, "images", file_name)
+            if os.path.exists(src):
+                shutil.copy(src, dst)
+            
+            coco["images"].append(img_info)
+            
+            frame_idx = img_id_to_frame_idx[img_id]
+            if frame_idx in video_segments:
+                for obj_id, mask in video_segments[frame_idx].items():
+                    contours, _ = cv2.findContours(mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                    if not contours: continue
+                    largest = max(contours, key=cv2.contourArea)
+                    epsilon = 0.002 * cv2.arcLength(largest, True)
+                    approx = cv2.approxPolyDP(largest, epsilon, True)
+                    polygon = approx.flatten().tolist()
+                    
+                    if len(polygon) < 6: continue
+                    
+                    x_coords = polygon[0::2]
+                    y_coords = polygon[1::2]
+                    bbox = [min(x_coords), min(y_coords), max(x_coords)-min(x_coords), max(y_coords)-min(y_coords)]
+                    
+                    coco["annotations"].append({
+                        "id": ann_id,
+                        "image_id": img_id,
+                        "category_id": obj_id,
+                        "segmentation": [polygon],
+                        "bbox": bbox,
+                        "area": cv2.contourArea(approx),
+                        "iscrowd": 0
+                    })
+                    ann_id += 1
+        
+        with open(os.path.join(export_dir, "_annotations.coco.json"), 'w') as f:
+            json.dump(coco, f)
+        print(f"✓ Exported refined COCO for {video_name} to {export_dir}")
         video_name = pathlib.Path(video_path).stem
         frames_dir = os.path.join(self.work_dir, "frames", video_name)
         os.makedirs(frames_dir, exist_ok=True)
