@@ -34,7 +34,7 @@ DEVICE        = 0                   # 0 = first GPU; "cpu" for CPU-only
 MODEL_TYPE    = "yolov11"
 
 # Pretrained weight defaults (used when CHECKPOINT is None)
-YOLO_WEIGHTS  = "yolo11l.pt"        # options: yolo11n/s/m/l/x.pt
+YOLO_WEIGHTS  = "yolo11l-seg.pt"        # options: yolo11n/s/m/l/x.pt
 RTDETR_WEIGHTS = "rtdetr-l.pt"      # options: rtdetr-l.pt, rtdetr-x.pt
 
 
