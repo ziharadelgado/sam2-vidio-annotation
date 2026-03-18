@@ -3,15 +3,15 @@
 #SBATCH --output=logs/sam2_%j.out
 #SBATCH --error=logs/sam2_%j.err
 #SBATCH --partition=gpu              # Common name, check 'sinfo' for your cluster
-#SBATCH --gres=gpu:1                 # Request 1 GPU
-#SBATCH --constraint="vram32gb"      # Request at least 32GB VRAM (Cluster specific)
+#SBATCH --gpus=1                     # Request 1 GPU
+#SBATCH --constraint="vram32"        # Request at least 32GB VRAM (Cluster specific)
 #SBATCH --cpus-per-task=8            # 8 cores to prevent GPU bottlenecking
-#SBATCH --mem=64G                    # 64GB System RAM to handle large image sets
+#SBATCH --mem=60G                    # 60GB System RAM to handle large image sets
 #SBATCH --time=12:00:00              # 12 hour limit
 
 # 1. Environment Setup
 module purge
-module load Python/3.11.3
+module load Python/3.11
 # module load CUDA/12.1              # Load CUDA if required by your HPC
 
 # Ensure log directory exists
