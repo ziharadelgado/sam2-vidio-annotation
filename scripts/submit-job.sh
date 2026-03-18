@@ -11,7 +11,7 @@
 
 # 1. Environment Setup
 module purge
-module load Python/3.11
+# Python 3.11.1 is available by default, no module load needed
 # module load CUDA/12.1              # Load CUDA if required by your HPC
 
 # Ensure log directory exists
