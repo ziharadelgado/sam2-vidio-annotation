@@ -17,22 +17,28 @@ module purge
 # Ensure log directory exists
 mkdir -p logs
 
-# 2. Check rclone access before starting
-echo "Checking rclone remote 'gdrive'..."
-if ! rclone lsd gdrive: > /dev/null 2>&1; then
-    echo "ERROR: rclone remote 'gdrive' is not configured or accessible."
-    echo "Please run 'rclone config' on the login node first."
+# 2. Sync Queue from GDrive
+echo "Syncing queue from Google Drive..."
+local_queue="/home/kamron_aggor_uri_edu/annotated-video/queue"
+mkdir -p "$local_queue"
+
+# Use a 2-minute timeout and verbose output
+timeout 120s rclone copy gdrive:DeepSea_ObjectDetection/rclone/queue/ "$local_queue" -v
+
+if [ $? -ne 0 ]; then
+    echo "ERROR: Rclone sync failed or timed out. Check connection or 'rclone config'."
     exit 1
 fi
+
 # 3. Enter project directory and activate environment
 cd /home/kamron_aggor_uri_edu/ocean_detect/trainer/sam2-vidio-annotation
 source ../trainerenv/bin/activate
 
 # 4. Final verification of requirements
 pip install -r requirements.txt --quiet  # Ensure environment is synced
-# 5. Execute Processing
+
+# 5. Execute Processing (Unbuffered to see logs live)
 echo "Starting SAM 2.1 Processing at $(date)"
-# Note: We do NOT use 'arch -arm64' here as HPC is x86_64 Linux
-python3 main.py
+python3 -u main.py
 
 echo "Job finished at $(date)"
