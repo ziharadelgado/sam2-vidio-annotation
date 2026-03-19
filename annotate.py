@@ -88,6 +88,7 @@ class SharkAnnotator:
     def process_images(self, image_dir, coco_json_path):
         """
         Process a directory of images using COCO annotations.
+        Handles descriptive filenames by creating numeric symlinks for SAM 2.
         """
         video_name = pathlib.Path(image_dir).name
         with open(coco_json_path, 'r') as f:
@@ -103,30 +104,57 @@ class SharkAnnotator:
             
         # Map image_id to file_name and info
         images_info = {img["id"]: img for img in coco_data["images"]}
+        sorted_img_ids = sorted(images_info.keys())
         
-        # SAM 2 video predictor can take a directory of images
-        print(f"Initializing SAM 2 state for image directory: {video_name}...")
+        # Create a temporary directory with numeric symlinks for SAM 2
+        # SAM 2 requires numeric filenames for internal sorting
+        temp_seq_dir = os.path.join(self.work_dir, "temp_seq", video_name)
+        if os.path.exists(temp_seq_dir):
+            shutil.rmtree(temp_seq_dir)
+        os.makedirs(temp_seq_dir, exist_ok=True)
+        
+        img_id_to_frame_idx = {}
+        frame_idx_to_img_id = {}
+        
+        print(f"Creating numeric symlinks for {video_name}...")
+        for i, img_id in enumerate(sorted_img_ids):
+            img_info = images_info[img_id]
+            original_file = img_info["file_name"]
+            src_path = os.path.abspath(os.path.join(image_dir, original_file))
+            
+            # New numeric name: 00000.jpg, 00001.jpg, etc.
+            ext = os.path.splitext(original_file)[1]
+            numeric_name = f"{i:05d}{ext}"
+            dst_path = os.path.join(temp_seq_dir, numeric_name)
+            
+            if os.path.exists(src_path):
+                try:
+                    os.symlink(src_path, dst_path)
+                    img_id_to_frame_idx[img_id] = i
+                    frame_idx_to_img_id[i] = img_id
+                except Exception as e:
+                    print(f"❌ Failed to create symlink: {e}")
+            else:
+                print(f"⚠️ Warning: Image file {src_path} not found.")
+
+        # SAM 2 video predictor now sees a directory of 00000.jpg, 00001.jpg...
+        print(f"Initializing SAM 2 state for image directory (sequenced): {video_name}...")
         inference_state = self.predictor.init_state(
-            video_path=image_dir,
+            video_path=temp_seq_dir,
             offload_video_to_cpu=True,
             offload_state_to_cpu=True
         )
         
-        # Sort image IDs to ensure we process in some order (SAM 2 expects frame indices)
-        # We'll map image IDs to frame indices 0, 1, 2...
-        sorted_img_ids = sorted(images_info.keys())
-        img_id_to_frame_idx = {img_id: i for i, img_id in enumerate(sorted_img_ids)}
-        
         # Add prompts
         for img_id in sorted_img_ids:
-            if img_id in img_id_to_anns:
+            if img_id in img_id_to_anns and img_id in img_id_to_frame_idx:
                 frame_idx = img_id_to_frame_idx[img_id]
                 for ann in img_id_to_anns[img_id]:
                     obj_id = ann.get("category_id", 1)
                     bbox = ann["bbox"] # [x, y, w, h]
                     box = [bbox[0], bbox[1], bbox[0] + bbox[2], bbox[1] + bbox[3]]
                     
-                    print(f"Adding box prompt on frame {frame_idx} (img_id {img_id}): {box}")
+                    print(f"Adding box prompt on frame {frame_idx} (orig: {images_info[img_id]['file_name']}): {box}")
                     self.predictor.add_new_points_or_box(
                         inference_state=inference_state,
                         frame_idx=frame_idx,
@@ -134,9 +162,6 @@ class SharkAnnotator:
                         box=box
                     )
 
-        # Propagate (even if they aren't strictly a sequence, SAM 2 can refine/propagate)
-        # If they aren't a sequence, we might just want to process each frame individually
-        # But SAM 2's strength is propagation. Let's propagate.
         print("Propagating masks...")
         video_segments = {}
         for out_frame_idx, out_obj_ids, out_mask_logits in self.predictor.propagate_in_video(inference_state):
@@ -146,12 +171,11 @@ class SharkAnnotator:
             }
 
         # Export (using original image names)
-        num_frames = len(sorted_img_ids)
-        # We need to adapt export_coco to use original file names
         self.export_coco_images(video_name, video_segments, image_dir, sorted_img_ids, images_info, img_id_to_frame_idx)
         
         # Cleanup
         self.predictor.reset_state(inference_state)
+        shutil.rmtree(temp_seq_dir)
         torch.cuda.empty_cache()
         gc.collect()
 
