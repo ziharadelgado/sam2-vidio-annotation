@@ -11,7 +11,7 @@ rclone copy gdrive:DeepSea_ObjectDetection/rclone/queue/ "$QUEUE_DIR" -v
 if [ $? -eq 0 ]; then
     echo "✓ Sync complete."
     echo "2. Submitting SLURM job..."
-    sbatch "$PROJECT_DIR/scripts/submit-job.sh"
+    sbatch "$PROJECT_DIR/scripts/sam2_job.slurm"
 else
     echo "❌ Rclone sync failed. Job not submitted."
     exit 1
