@@ -123,7 +123,8 @@ class SharkAnnotator:
         temp_dir = os.path.join(self.work_dir, "temp_single")
         
         for img_id in tqdm(sorted_img_ids, desc=f"Refining {split_name}"):
-            if img_id not in img_id_to_anns:
+            img_anns = img_id_to_anns.get(img_id, [])
+            if not img_anns:
                 continue
                 
             img_info = images_info[img_id]
@@ -131,9 +132,31 @@ class SharkAnnotator:
             src_path = os.path.join(image_dir, file_name)
             
             if not os.path.exists(src_path):
+                # If image missing, still keep original annotations but we can't refine others
+                for ann in img_anns:
+                    new_ann = ann.copy()
+                    new_ann["id"] = ann_id
+                    new_annotations.append(new_ann)
+                    ann_id += 1
                 continue
 
-            # Create temporary single-frame "video"
+            # Separate annotations into those with segmentation and those without
+            to_process = []
+            for ann in img_anns:
+                if ann.get("segmentation") and len(ann["segmentation"]) > 0:
+                    # Keep existing segmentation
+                    new_ann = ann.copy()
+                    new_ann["id"] = ann_id
+                    new_annotations.append(new_ann)
+                    ann_id += 1
+                else:
+                    # To be processed by SAM
+                    to_process.append(ann)
+
+            if not to_process:
+                continue
+
+            # Create temporary single-frame "video" for the ones that need refining
             if os.path.exists(temp_dir): shutil.rmtree(temp_dir)
             os.makedirs(temp_dir)
             shutil.copy(src_path, os.path.join(temp_dir, "00000.jpg"))
@@ -141,51 +164,62 @@ class SharkAnnotator:
             try:
                 inference_state = self.predictor.init_state(video_path=temp_dir)
                 
-                has_prompts = False
-                for ann in img_id_to_anns[img_id]:
-                    # FILTER: Skip if it already has segmentation data
-                    if ann.get("segmentation") and len(ann["segmentation"]) > 0:
-                        continue
-                        
+                for ann in to_process:
                     bbox = ann["bbox"] # [x, y, w, h]
                     box = [bbox[0], bbox[1], bbox[0] + bbox[2], bbox[1] + bbox[3]]
-                    obj_id = ann.get("category_id", 1)
-                    
+                    # Use a unique obj_id for each annotation to track them
+                    # We'll use the original category_id for SAM but we need to map results back
+                    # Actually, SAM uses obj_id as an identifier.
                     self.predictor.add_new_points_or_box(
                         inference_state=inference_state,
                         frame_idx=0,
-                        obj_id=obj_id,
+                        obj_id=ann["id"], # Use original ID as obj_id for mapping
                         box=box
                     )
-                    has_prompts = True
                 
-                if not has_prompts:
-                    self.predictor.reset_state(inference_state)
-                    continue
-
                 # Get refined masks
                 for out_frame_idx, out_obj_ids, out_mask_logits in self.predictor.propagate_in_video(inference_state):
                     for i, obj_id in enumerate(out_obj_ids):
                         mask = self.clean_mask((out_mask_logits[i] > 0.0).cpu().numpy().squeeze())
                         contours, _ = cv2.findContours(mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-                        if not contours: continue
+                        if not contours: 
+                            # If SAM failed to find a mask, keep the original bbox annotation
+                            # Search for the original annotation in to_process
+                            orig_ann = next((a for a in to_process if a["id"] == obj_id), None)
+                            if orig_ann:
+                                new_ann = orig_ann.copy()
+                                new_ann["id"] = ann_id
+                                new_annotations.append(new_ann)
+                                ann_id += 1
+                            continue
                         
                         largest = max(contours, key=cv2.contourArea)
                         epsilon = 0.002 * cv2.arcLength(largest, True)
                         approx = cv2.approxPolyDP(largest, epsilon, True)
                         polygon = approx.flatten().tolist()
                         
-                        if len(polygon) < 6: continue
+                        if len(polygon) < 6:
+                            # Too small, fallback to original bbox
+                            orig_ann = next((a for a in to_process if a["id"] == obj_id), None)
+                            if orig_ann:
+                                new_ann = orig_ann.copy()
+                                new_ann["id"] = ann_id
+                                new_annotations.append(new_ann)
+                                ann_id += 1
+                            continue
                         
                         # Calculate new bbox from mask
                         x_coords = polygon[0::2]
                         y_coords = polygon[1::2]
                         new_bbox = [min(x_coords), min(y_coords), max(x_coords)-min(x_coords), max(y_coords)-min(y_coords)]
                         
+                        orig_ann = next((a for a in to_process if a["id"] == obj_id), None)
+                        category_id = orig_ann["category_id"] if orig_ann else 1
+
                         new_annotations.append({
                             "id": ann_id,
                             "image_id": img_id,
-                            "category_id": obj_id,
+                            "category_id": category_id,
                             "segmentation": [polygon],
                             "bbox": new_bbox,
                             "area": cv2.contourArea(approx),
@@ -196,6 +230,12 @@ class SharkAnnotator:
                 self.predictor.reset_state(inference_state)
             except Exception as e:
                 print(f"Error processing {file_name}: {e}")
+                # Fallback: keep original annotations if SAM fails
+                for ann in to_process:
+                    new_ann = ann.copy()
+                    new_ann["id"] = ann_id
+                    new_annotations.append(new_ann)
+                    ann_id += 1
             finally:
                 if (img_id % 50 == 0):
                     torch.cuda.empty_cache()
