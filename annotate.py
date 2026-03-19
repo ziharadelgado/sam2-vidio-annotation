@@ -18,14 +18,14 @@ from tqdm import tqdm
 # Add SAM2 to path
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 SAM2_DIR = os.path.join(SCRIPT_DIR, "models", "sam2")
-if SAM2_DIR not in sys.path:
-    sys.path.insert(0, SAM2_DIR)
 
-try:
-    from sam2.build_sam import build_sam2_video_predictor
-    HAS_SAM2 = True
-except ImportError:
-    HAS_SAM2 = False
+if SAM2_DIR not in sys.path:
+    try:
+        sys.path.insert(0, SAM2_DIR)
+        from sam2.build_sam import build_sam2_video_predictor
+        HAS_SAM2 = True
+    except ImportError:
+        HAS_SAM2 = False
 
 class SharkAnnotator:
     def __init__(self, 
@@ -141,7 +141,12 @@ class SharkAnnotator:
             try:
                 inference_state = self.predictor.init_state(video_path=temp_dir)
                 
+                has_prompts = False
                 for ann in img_id_to_anns[img_id]:
+                    # FILTER: Skip if it already has segmentation data
+                    if ann.get("segmentation") and len(ann["segmentation"]) > 0:
+                        continue
+                        
                     bbox = ann["bbox"] # [x, y, w, h]
                     box = [bbox[0], bbox[1], bbox[0] + bbox[2], bbox[1] + bbox[3]]
                     obj_id = ann.get("category_id", 1)
@@ -152,7 +157,12 @@ class SharkAnnotator:
                         obj_id=obj_id,
                         box=box
                     )
+                    has_prompts = True
                 
+                if not has_prompts:
+                    self.predictor.reset_state(inference_state)
+                    continue
+
                 # Get refined masks
                 for out_frame_idx, out_obj_ids, out_mask_logits in self.predictor.propagate_in_video(inference_state):
                     for i, obj_id in enumerate(out_obj_ids):
