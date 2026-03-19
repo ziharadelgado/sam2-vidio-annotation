@@ -19,9 +19,22 @@ pip install --upgrade pip
 echo "Downloading and installing PyTorch..."
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
 
-# 4. Install SAM 2 and other requirements
-echo "Installing SAM 2 dependencies..."
+# 4. Clone and install SAM 2
+echo "Setting up SAM 2 repository..."
+if [ ! -d "models/sam2" ]; then
+    mkdir -p models
+    cd models
+    git clone https://github.com/facebookresearch/sam2.git
+    cd ..
+fi
+
+echo "Installing SAM 2 package..."
+cd models/sam2
 pip install -e .
+cd ../..
+
+# 5. Install other requirements
+echo "Installing other requirements..."
 pip install -r requirements.txt
 
 echo "Setup complete at $(date)"
