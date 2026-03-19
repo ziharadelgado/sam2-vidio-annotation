@@ -21,20 +21,20 @@ pip install torch torchvision torchaudio --index-url https://download.pytorch.or
 
 # 4. Clone and install SAM 2
 echo "Setting up SAM 2 repository..."
-if [ ! -d "models/sam2" ]; then
-    mkdir -p models
-    cd models
+INSTALL_ROOT="/home/kamron_aggor_uri_edu/ocean_detect/trainer/sam2-vidio-annotation"
+if [ ! -d "$INSTALL_ROOT/models/sam2" ]; then
+    mkdir -p "$INSTALL_ROOT/models"
+    cd "$INSTALL_ROOT/models"
     git clone https://github.com/facebookresearch/sam2.git
-    cd ..
 fi
 
-echo "Installing SAM 2 package..."
-cd models/sam2
+echo "Installing SAM 2 package from $INSTALL_ROOT/models/sam2..."
+cd "$INSTALL_ROOT/models/sam2"
 pip install -e .
-cd ../..
 
 # 5. Install other requirements
 echo "Installing other requirements..."
+cd "$INSTALL_ROOT"
 pip install -r requirements.txt
 
 echo "Setup complete at $(date)"
