@@ -24,15 +24,13 @@ This Jupyter notebook workflow uses Meta's Segment Anything Model 2 (SAM 2) to a
 
 ### Directions
 
-**1.** Ensure your annotated dataset is available on your remote of choice (preferred: Rclone).
-**2.** Edit `sync_and_run.sh` such that it references your remote and the annotated data contained within.
-**3.** Run `sync_and_run.sh` in terminal as `bash` command.
+**1.** Ensure your annotated dataset is available on your rclone. Rclone remote MUST be named 'gdrive'.
 
+**2.** Edit `sync_and_run.sh` such that it references your remote and the annotated data contained within. This means editing <PROJECT_DIR> and <QUEUE_DIR> such that the pathing matches your login node file structure.
+
+**3.** Make sure DeepSea_ObjectDetection folder in Google Drive has an alias/shortcut within your HOME directory.
+
+**4.** Make sure to clone this project into a folder called 'trainer'.
+
+**5.** Run `scripts/sync_and_run.sh`
 ```
-
-**Why these specific commands?**
-1. **`--constraint="a100|l40s|h100"`**: Ensures consistent performance across different GPU nodes. SAM 2's behavior varies on different GPUs without proper configuration.
-2. **`--mem=64G`**: Allocates sufficient RAM for video frame processing (default 8GB is insufficient).
-3. **`cd sam2` before Jupyter**: Prevents Python import conflicts. SAM 2 will crash if launched from the wrong directory.
-
---
