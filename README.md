@@ -1,36 +1,71 @@
-# SAM 2 Video Annotation for Deep-Sea Shark Detection
+# SAM 3 Video Annotation Pipeline
+## URI AI Lab — Deep-Sea Object Detection
 
-**Automated annotation pipeline using SAM 2 to track sharks through underwater video footage, reducing manual annotation time from hours to minutes.**
+Automated shark video annotation using **SAM 3** + **YOLO26n-seg (SharkDetect-V4-seg)**.
 
-## 📋 Overview
+Replaces the previous SAM 2 bounding-box workflow. No manual bounding boxes needed —
+just drop a video in the queue on Google Drive and the pipeline handles everything.
 
-This Jupyter notebook workflow uses Meta's Segment Anything Model 2 (SAM 2) to automatically propagate annotations through video frames. Weakly-annotated frames (such as bounding boxes either by hand or generated via a detector) are used to prompt the segmentation model.
+## What Changed from SAM 2
 
+| | SAM 2 (old) | SAM 3 (new) |
+|---|---|---|
+| Prompt | Manual bounding box per shark | Text: "shark" + auto exemplar |
+| Sharks per prompt | One | All instances automatically |
+| Re-entry | Fails | Detector re-finds from scratch |
+| Empty frames | Hallucinated masks | Presence Token → no output |
+| First pass | None | YOLO26n-seg finds best exemplar |
+| Upload | Manual | Auto-upload to Roboflow |
 
-**Benefits:**
-- Higher annotation quality for little cost
-- Quick and easy
-- Easily shareable
+## Pipeline Flow
 
----
+```
+Google Drive queue → rclone sync
+    ↓
+YOLO26n-seg (SharkDetect-V4-seg) first pass
+    → finds sharks, picks best detection as exemplar
+    ↓
+SAM 3 (text "shark" + YOLO exemplar)
+    → segments ALL sharks across ALL frames
+    → handles re-entry, multi-instance, empty frames
+    ↓
+Export YOLO segmentation format + COCO JSON
+    ↓
+Auto-upload to Roboflow
+```
 
-## 🚀 Quickstart
+## Quick Start
 
-### Prerequisites
-- Access to HPC cluster with GPU (tested on Unity @ URI)
-- Slurm job scheduler
-- Python 3.11+
-- CUDA-compatible GPU (A100, L40S, or H100 recommended)
+```bash
+# 1. Sync and run (same as before)
+bash scripts/sync_and_run.sh
 
-### Directions
+# 2. Or submit directly
+sbatch scripts/sam3_job.slurm
 
-**1.** Ensure your annotated dataset is available on your rclone. Rclone remote MUST be named 'gdrive'.
+# 3. Check logs
+tail -f logs/sam3_*.out
+```
 
-**2.** Edit `sync_and_run.sh` such that it references your remote and the annotated data contained within. This means editing <PROJECT_DIR> and <QUEUE_DIR> such that the pathing matches your login node file structure.
+## Setup
 
-**3.** Make sure DeepSea_ObjectDetection folder in Google Drive has an alias/shortcut within your HOME directory.
+Requires the `sam3` conda environment on Unity:
+```bash
+module load conda/latest cuda/12.6
+conda activate sam3
+pip install -r requirements.txt
+```
 
-**4.** Make sure to clone this project into a folder called 'trainer'.
+## Files
 
-**5.** Run `scripts/sync_and_run.sh`
+```
+sam3-vidio-annotation/
+├── main.py              # Entry point (same structure as Kamron's)
+├── annotate.py          # SharkAnnotator class (SAM 3 + YOLO)
+├── train.py             # Train SharkDetect-V4-seg (YOLO26n-seg)
+├── requirements.txt
+├── .gitignore
+└── scripts/
+    ├── sam3_job.slurm   # SLURM job script
+    └── sync_and_run.sh  # Sync GDrive + submit job
 ```
