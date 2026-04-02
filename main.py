@@ -1,4 +1,4 @@
-# Rewrite of Kamron's main.py for SAM 3 + YOLO26n-seg
+
 # Same flow: download checkpoint → init annotator → download queue → process → export
 
 import os
