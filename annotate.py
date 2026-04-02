@@ -96,7 +96,56 @@ class SharkAnnotator:
             cleaned = mask_uint8
         return cleaned.astype(bool)
 
-    def process_images(self, image_dir, coco_json_path):
+    def _coco_bbox_to_xyxy(self, bbox):
+        """
+        Convert COCO bbox [x, y, w, h] into [x1, y1, x2, y2].
+        SAM box prompts are expected in corner format.
+        """
+        x, y, w, h = bbox
+        return [x, y, x + w, y + h]
+
+    def _bbox_to_polygon(self, bbox):
+        """
+        Fallback segmentation polygon when SAM does not return a usable mask.
+        Produces a rectangular polygon in COCO segmentation format.
+        """
+        x, y, w, h = bbox
+        return [x, y, x + w, y, x + w, y + h, x, y + h]
+
+    def _add_optional_text_support(self, inference_state, frame_idx, obj_id, text_prompt):
+        """
+        Optionally add semantic text support when the loaded predictor exposes
+        a text-prompt API. This is best-effort and never replaces box prompts.
+        """
+        if not text_prompt:
+            return
+
+        # Different SAM builds can expose different method names for text prompting.
+        # We try known patterns safely and continue if unavailable.
+        text_methods = [
+            "add_new_text",
+            "add_new_text_prompt",
+            "add_new_prompt",
+        ]
+        for method_name in text_methods:
+            method = getattr(self.predictor, method_name, None)
+            if callable(method):
+                try:
+                    method(
+                        inference_state=inference_state,
+                        frame_idx=frame_idx,
+                        obj_id=obj_id,
+                        text=text_prompt
+                    )
+                except TypeError:
+                    # Some implementations may use positional args.
+                    method(inference_state, frame_idx, obj_id, text_prompt)
+                except Exception:
+                    # Text support is optional; a failure here should not block bbox prompts.
+                    pass
+                return
+
+    def process_images(self, image_dir, coco_json_path, text_prompt=None):
         """
         Process a directory of images using COCO annotations.
         Optimized for memory by processing image-by-image.
@@ -107,6 +156,7 @@ class SharkAnnotator:
         with open(coco_json_path, 'r') as f:
             coco_data = json.load(f)
         
+        # Group COCO annotations by image_id so we can process one image at a time.
         img_id_to_anns = {}
         for ann in coco_data["annotations"]:
             img_id = ann["image_id"]
@@ -165,16 +215,23 @@ class SharkAnnotator:
                 inference_state = self.predictor.init_state(video_path=temp_dir)
                 
                 for ann in to_process:
-                    bbox = ann["bbox"] # [x, y, w, h]
-                    box = [bbox[0], bbox[1], bbox[0] + bbox[2], bbox[1] + bbox[3]]
-                    # Use a unique obj_id for each annotation to track them
-                    # We'll use the original category_id for SAM but we need to map results back
-                    # Actually, SAM uses obj_id as an identifier.
+                    # Main prompt source for COCO directories: human COCO bounding boxes.
+                    # Convert [x, y, w, h] -> [x1, y1, x2, y2] for SAM.
+                    bbox = ann["bbox"]
+                    box = self._coco_bbox_to_xyxy(bbox)
+                    # Use original annotation ID as SAM object ID to map masks back cleanly.
                     self.predictor.add_new_points_or_box(
                         inference_state=inference_state,
                         frame_idx=0,
-                        obj_id=ann["id"], # Use original ID as obj_id for mapping
+                        obj_id=ann["id"],
                         box=box
+                    )
+                    # Optional semantic support. This is additive and never text-only.
+                    self._add_optional_text_support(
+                        inference_state=inference_state,
+                        frame_idx=0,
+                        obj_id=ann["id"],
+                        text_prompt=text_prompt
                     )
                 
                 # Get refined masks
@@ -183,12 +240,15 @@ class SharkAnnotator:
                         mask = self.clean_mask((out_mask_logits[i] > 0.0).cpu().numpy().squeeze())
                         contours, _ = cv2.findContours(mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
                         if not contours: 
-                            # If SAM failed to find a mask, keep the original bbox annotation
-                            # Search for the original annotation in to_process
+                            # If SAM fails, keep one instance annotation using a bbox polygon fallback.
                             orig_ann = next((a for a in to_process if a["id"] == obj_id), None)
                             if orig_ann:
+                                fallback_polygon = self._bbox_to_polygon(orig_ann["bbox"])
                                 new_ann = orig_ann.copy()
                                 new_ann["id"] = ann_id
+                                new_ann["segmentation"] = [fallback_polygon]
+                                new_ann["area"] = orig_ann["bbox"][2] * orig_ann["bbox"][3]
+                                new_ann["iscrowd"] = orig_ann.get("iscrowd", 0)
                                 new_annotations.append(new_ann)
                                 ann_id += 1
                             continue
@@ -199,11 +259,15 @@ class SharkAnnotator:
                         polygon = approx.flatten().tolist()
                         
                         if len(polygon) < 6:
-                            # Too small, fallback to original bbox
+                            # Too small to form a valid polygon; fallback to bbox polygon.
                             orig_ann = next((a for a in to_process if a["id"] == obj_id), None)
                             if orig_ann:
+                                fallback_polygon = self._bbox_to_polygon(orig_ann["bbox"])
                                 new_ann = orig_ann.copy()
                                 new_ann["id"] = ann_id
+                                new_ann["segmentation"] = [fallback_polygon]
+                                new_ann["area"] = orig_ann["bbox"][2] * orig_ann["bbox"][3]
+                                new_ann["iscrowd"] = orig_ann.get("iscrowd", 0)
                                 new_annotations.append(new_ann)
                                 ann_id += 1
                             continue
@@ -230,10 +294,14 @@ class SharkAnnotator:
                 self.predictor.reset_state(inference_state)
             except Exception as e:
                 print(f"Error processing {file_name}: {e}")
-                # Fallback: keep original annotations if SAM fails
+                # Fallback: preserve one segmentation per bbox using rectangular polygons.
                 for ann in to_process:
+                    fallback_polygon = self._bbox_to_polygon(ann["bbox"])
                     new_ann = ann.copy()
                     new_ann["id"] = ann_id
+                    new_ann["segmentation"] = [fallback_polygon]
+                    new_ann["area"] = ann["bbox"][2] * ann["bbox"][3]
+                    new_ann["iscrowd"] = ann.get("iscrowd", 0)
                     new_annotations.append(new_ann)
                     ann_id += 1
             finally:
