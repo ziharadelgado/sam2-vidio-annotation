@@ -14,6 +14,7 @@ import gc
 import cv2
 from PIL import Image
 from tqdm import tqdm
+from roboflow import Roboflow
 
 # Add SAM2 to path
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -96,7 +97,6 @@ class SharkAnnotator:
             cleaned = mask_uint8
         return cleaned.astype(bool)
 
-    def process_images(self, image_dir, coco_json_path):
     def _coco_bbox_to_xyxy(self, bbox):
         """
         Convert COCO bbox [x, y, w, h] into [x1, y1, x2, y2].
@@ -230,7 +230,6 @@ class SharkAnnotator:
                         inference_state=inference_state,
                         frame_idx=0,
                         obj_id=ann["id"], # Use original ID as obj_id for mapping
-                        obj_id=ann["id"],
                         box=box
                     )
                     # Optional semantic support. This is additive and never text-only.
@@ -338,6 +337,34 @@ class SharkAnnotator:
         # Logic would be similar to process_images but with frame extraction
         # For now, we focus on the user's image splits.
         pass
+
+    def upload_to_roboflow(self, refined_coco_json, api_key, workspace, project_name, split="train"):
+        """
+        Best-effort upload helper for refined COCO exports.
+        It uploads the generated JSON artifact file to the target Roboflow project.
+        """
+        refined_coco_json = os.path.abspath(refined_coco_json)
+        if not os.path.exists(refined_coco_json):
+            print(f"⚠ Roboflow upload skipped (missing file): {refined_coco_json}")
+            return False
+
+        try:
+            rf = Roboflow(api_key=api_key)
+            project = rf.workspace(workspace).project(project_name)
+            print(
+                f"Uploading refined COCO artifact to Roboflow: "
+                f"{os.path.basename(refined_coco_json)} (split={split})"
+            )
+            project.upload(
+                refined_coco_json,
+                split=split,
+                batch_name=f"sam3-refined-{split}"
+            )
+            print("✓ Roboflow upload request submitted")
+            return True
+        except Exception as e:
+            print(f"⚠ Roboflow upload failed for {refined_coco_json}: {e}")
+            return False
 
 def main():
     # CLI entry point remains similar but main logic is in main.py

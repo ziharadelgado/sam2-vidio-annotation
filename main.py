@@ -124,6 +124,15 @@ def main():
 
         try:
             annotator.process_images(coco_dir, json_path)
+            refined_json = os.path.join(WORK_DIR, "exports", f"{dir_name}_refined.json")
+            if UPLOAD_TO_ROBOFLOW:
+                annotator.upload_to_roboflow(
+                    refined_json,
+                    api_key=ROBOFLOW_API_KEY,
+                    workspace=ROBOFLOW_WORKSPACE,
+                    project_name=ROBOFLOW_PROJECT,
+                    split=dir_name
+                )
         except Exception as e:
             print(f"Error processing {dir_name}: {e}")
             import traceback
